@@ -19,6 +19,8 @@ import re
 import cProfile
 import pstats
 import timeit
+import numpy as np
+import copy
 
 # print(sys.path)
 
@@ -66,8 +68,19 @@ scale_val = 2
 scadCode_val = True
 ti_iter = 3
 
+# handle old version of rebuild test
+fn = structure_rebuild_test
+srt_args = fn.__code__.co_varnames[: fn.__code__.co_argcount]
+old_srt = False if len(srt_args) > 2 else True
+srt_string = (
+    "structure_rebuild_test(pdb_structure, args.tv)"
+    if old_srt
+    else "structure_rebuild_test(pdb_structure, args.tv, args.cc)"
+)
 
-def doCpti(args, cmd, pdb_structure):
+
+# def doCpti(args, cmd, pdb_structure):
+def doCpti(args, cmd):
     """Profile handler for cmd."""
     if args.ti:
         tr = timeit.repeat(stmt=cmd, repeat=int(ti_iter), number=1, globals=globals(),)
@@ -89,15 +102,126 @@ def adj60(ric, angle):
         ric.set_angle(angle, ang + 60.0)
 
 
-def test66(pdb_structure, alist):
+def rmse(a0, a1):
+    return np.sqrt(((a0 - a1) ** 2).mean())
+
+
+def test66(pdb_structure, alist, pdb_copy):
     """change dihedral angles 6x60."""
-    for i in range(6):
-        for r in pdb_structure.get_residues():
+
+    for chnTpl in zip(pdb_structure.get_chains(), pdb_copy.get_chains()):
+        cic0, cic1 = chnTpl[0].internal_coord, chnTpl[1].internal_coord
+        aNdxList = []
+        for r in chnTpl[0].get_residues():
             ric = r.internal_coord
-            if ric:
+        if not old_srt:
+            if ric is not None:
                 for a in alist:
-                    adj60(ric, a)
-        pdb_structure.internal_to_atom_coordinates()
+                    edron = ric.pick_angle(a)
+                    if edron is not None:
+                        aNdxList.append(edron.ndx)
+            r0 = rmse(
+                cic0.atomArray[:, 0:3],
+                cic1.atomArray[:, 0:3],
+                # cic0.dihedraAngle[aNdxList],
+                # cic1.dihedraAngle[aNdxList],
+            )
+            print(f"{r0:.3}", end="")
+        for i in range(6):
+            for r in chnTpl[0].get_residues():
+                ric = r.internal_coord
+                if ric:
+                    for a in alist:
+                        adj60(ric, a)
+            cic0.internal_to_atom_coordinates()
+            cic0.atom_to_internal_coordinates()
+            if not old_srt:
+                r1 = rmse(
+                    cic0.atomArray[:, 0:3],
+                    cic1.atomArray[:, 0:3],
+                    # cic0.dihedraAngle[aNdxList],
+                    # cic1.dihedraAngle[aNdxList],
+                )
+                print(f" -> {r1:.4} ", end="")
+            pass
+            # pdb_structure.internal_to_atom_coordinates()
+    if not old_srt:
+        print()
+
+
+def testTau(pdb_structure, pdb_copy):
+    """change tau angles 1 degree steps -3, +3, back to 0."""
+
+    for chnTpl in zip(pdb_structure.get_chains(), pdb_copy.get_chains()):
+        cic0, cic1 = chnTpl[0].internal_coord, chnTpl[1].internal_coord
+        aNdxList = []
+        for r in chnTpl[0].get_residues():
+            ric = r.internal_coord
+            if ric is not None:
+                edron = ric.pick_angle("tau")
+                if edron is not None:
+                    aNdxList.append(edron.ndx)
+        if not old_srt:
+            r0 = rmse(
+                cic0.atomArray[:, 0:3],
+                cic1.atomArray[:, 0:3],
+                # cic0.hedraAngle[aNdxList],
+                # cic1.hedraAngle[aNdxList],
+            )
+            print(f"{r0:.3}", end="")
+        for i in (-3, 1, 1, 1, 1, 1, 1, -1, -1, -1):
+            for r in chnTpl[0].get_residues():
+                ric = r.internal_coord
+                if ric:
+                    a = ric.get_angle("tau")
+                    ric.set_angle("tau", a + i)
+            cic0.internal_to_atom_coordinates()
+            cic0.atom_to_internal_coordinates()
+            if not old_srt:
+                r1 = rmse(
+                    cic0.atomArray[:, 0:3],
+                    cic1.atomArray[:, 0:3],
+                    # cic0.hedraAngle[aNdxList],
+                    # cic1.hedraAngle[aNdxList],
+                )
+                print(f" -> {r1:.3} ", end="")
+            pass
+            # pdb_structure.internal_to_atom_coordinates()
+    if not old_srt:
+        print()
+
+
+def copyCheck(pdb_src, pdb_cpy):
+    for schn, cchn in zip(pdb_src.get_chains(), pdb_cpy.get_chains()):
+        schni = schn.internal_coord
+        cchni = cchn.internal_coord
+        print(
+            cchni.hedraL12.base is schni.hedraL12,
+            np.may_share_memory(cchni.hedraL12, schni.hedraL12),
+        )
+        print(
+            cchni.atomArray.base is schni.atomArray,
+            np.may_share_memory(cchni.atomArray, schni.atomArray),
+        )
+
+
+def color(val, tval, accept, fmt, tol):
+    if val is None:
+        return f"{'':{fmt}}"
+    if tval is None:
+        return "\u001b[34m" + f"{val:{fmt}}" + "\u001b[0m"
+    if val == tval:
+        return f"{val:{fmt}}"
+    diff = abs(val - tval)
+    # vstr = f"{val:{fmt}}"
+    # tvstr = f"{tval:{fmt}}"
+    if diff < (tol * 0.1):
+        return f"{val:{fmt}}"
+    if diff < tol:
+        return "\u001b[33m" + f"{val:{fmt}}" + "\u001b[0m"
+    if accept:
+        return "\u001b[32m" + f"{val:{fmt}}" + "\u001b[0m"
+    return "\u001b[31m" + f"{val:{fmt}}" + "\u001b[0m"
 
 
 arg_parser = argparse.ArgumentParser(
@@ -183,10 +307,12 @@ arg_parser.add_argument(
     "default " + str(IC_Chain.MaxPeptideBond),
 )
 arg_parser.add_argument(
-    "-backbone", help="OpenSCAD output: skip sidechains", action="store_true"
+    "-t", help="test conversion pdb/pic to pic/pdb", action="store_true"
 )
 arg_parser.add_argument(
-    "-t", help="test conversion pdb/pic to pic/pdb", action="store_true"
+    "-cc",
+    help="rebuild test copies coordspace matrices (faster, less rigorous)",
+    action="store_true",
 )
 arg_parser.add_argument(
     "-tv", help="verbose test conversion pdb<>pic", action="store_true"
@@ -218,6 +344,17 @@ arg_parser.add_argument(
     action="store_true",
 )
 arg_parser.add_argument(
+    "-tt",
+    help="read pdb, change every tau -3 to +3 and back to 0 deg & assemble, back to pdb and test",
+    action="store_true",
+)
+arg_parser.add_argument(
+    "-t33",
+    help="read pdb, residue 33 add 33 to each dihedral and check, add 3.3 to tau and check",
+    action="store_true",
+)
+
+arg_parser.add_argument(
     "-trp", help="read pdb, compute internal coords (profile)", action="store_true"
 )
 arg_parser.add_argument(
@@ -226,12 +363,25 @@ arg_parser.add_argument(
     help="cProfile, timeit iteration count option for -t, -tv, -t6x; default "
     + str(ti_iter),
 )
+arg_parser.add_argument(
+    "-ser", help="revert to serial algorithm for residue assembly", action="store_true"
+)
 arg_parser.add_argument("-nh", help="ignore hydrogens on PDB read", action="store_true")
 arg_parser.add_argument(
     "-d2h", help="swap D (deuterium) for H on PDB read", action="store_true"
 )
 arg_parser.add_argument(
-    "-amide", help="only amide proton, skip other Hs on PDB read", action="store_true"
+    "-backbone", help="only backbone heavy atoms on PDB read", action="store_true"
+)
+arg_parser.add_argument(
+    "-amidep",
+    help="add only amide proton for PDB read (use with -nh, -backbone)",
+    action="store_true",
+)
+arg_parser.add_argument(
+    "-cb",
+    help="accept C-beta for PDB read (use with -backbone, -gcb)",
+    action="store_true",
 )
 arg_parser.add_argument("-gcb", help="generate GLY C-beta atoms", action="store_true")
 arg_parser.add_argument(
@@ -245,6 +395,12 @@ arg_parser.add_argument(
     "-i", help="test just convert to internal coordinates", action="store_true"
 )
 
+arg_parser.add_argument(
+    "-tip",
+    help="test just convert to internal coordinates and back",
+    action="store_true",
+)
+
 arg_parser.add_argument("-p", help="print header info", action="store_true")
 
 args = arg_parser.parse_args()
@@ -253,21 +409,29 @@ args = arg_parser.parse_args()
 
 if args.nh:
     IC_Residue.accept_atoms = IC_Residue.accept_mainchain
-if args.amide:
-    IC_Residue.accept_atoms = IC_Residue.accept_mainchain + ("H",)
 if args.d2h:
     IC_Residue.accept_atoms += IC_Residue.accept_deuteriums
     AtomKey.d2h = True
+if args.backbone:
+    IC_Residue.accept_atoms = IC_Residue.accept_backbone
+if args.amidep:
+    IC_Residue.accept_atoms += ("H",)
+if args.cb:
+    IC_Residue.accept_atoms += ("CB",)
 if args.gcb:
     IC_Residue.gly_Cbeta = True
 if args.maxp:
     IC_Chain.MaxPeptideBond = float(args.maxp)
+if args.ser:
+    IC_Chain.ParallelAssembleResidues = False
 if args.scale:
     scale_val = float(args.scale)
 if args.skip_count:
     args.skip_count = int(args.skip_count)
 if args.limit_count:
     args.limit_count = int(args.limit_count)
+if args.ti_iter:
+    ti_iter = int(args.ti_iter)
 
 toProcess = args.file
 pdbidre = re.compile(r"(^\d(\w\w)\w)(\w)?$")
@@ -282,7 +446,6 @@ if args.filelist:
             # toProcess.append(PDB_repository_base + m.group(2)
             # + '/pdb' + m.group(1) + '.ent.gz' )
             toProcess.append(pdbidMatch.group(0))
-
 
 if len(toProcess):
     print(len(toProcess), "entries to process")
@@ -455,6 +618,19 @@ for target in toProcess:
             # add_PIC(pdb_structure)
             pdb_structure.atom_to_internal_coordinates()
 
+    if args.tip:
+        if pdb_input:
+            # add_PIC(pdb_structure)
+            pdb_structure.atom_to_internal_coordinates()
+            for chn in pdb_structure.get_chains():
+                cic = chn.internal_coord
+                cic.atomArrayValid[:] = False
+                cic.atomArrayValid[0:3] = True
+            pdb_structure.internal_to_atom_coordinates()
+        elif pic_input:
+            pdb_structure.internal_to_atom_coordinates()
+            pdb_structure.atom_to_internal_coordinates()
+
     if args.wi:
         if pdb_input:
             # add_PIC(pdb_structure)
@@ -467,16 +643,14 @@ for target in toProcess:
         if pdb_input:
             with warnings.catch_warnings(record=True) as w:
                 # warnings.simplefilter("error")
-                # if True:  # try:
                 try:
                     if args.cp or args.ti:
-                        doCpti(
-                            args,
-                            "structure_rebuild_test(pdb_structure, args.tv)",
-                            pdb_structure,
-                        )
+                        doCpti(args, srt_string)
                     else:
-                        r = structure_rebuild_test(pdb_structure, args.tv)
+                        if old_srt:
+                            r = structure_rebuild_test(pdb_structure, args.tv)
+                        else:
+                            r = structure_rebuild_test(pdb_structure, args.tv, args.cc)
                     warns = len(w) > 0
                     if args.tv and warns:
                         for wrn in w:
@@ -518,28 +692,169 @@ for target in toProcess:
         else:
             doCpti(args, "pdb_structure.atom_to_internal_coordinates()", pdb_structure)
 
-    if args.t6p or args.t6a or args.t6s or args.t6c:
-        if pdb_input:
+    if args.t6p or args.t6a or args.t6s or args.t6c or args.tt:
+        if pic_input:
+            # pdb_copy = read_PIC(
+            #    gzip.open(filename, mode="rt") if filename.endswith(".gz") else filename
+            # )
+            # pdb_copy = copy.deepcopy(pdb_structure)
+            pdb_structure.internal_to_atom_coordinates()
+            # pdb_copy.internal_to_atom_coordinates()
+            pdb_copy = copy.deepcopy(pdb_structure)
+        elif pdb_input:
             pdb_copy = pdb_structure.copy()
             pdb_structure.atom_to_internal_coordinates()
-        else:
-            print("-t6x only for pdb input")
-            continue
+            pdb_copy.atom_to_internal_coordinates()
+        # else:
+        #    print("-t6x only for pdb input")
+        #    continue
         alist = []
         if args.t6p:
             alist = ["psi"]
         elif args.t6a:
-            alist = ["psi", "phi", "omg", "chi1", "chi2", "chi3", "chi4", "chi5"]
+            alist = ["psi", "omg", "phi", "chi1", "chi2", "chi3", "chi4", "chi5"]
         elif args.t6s:
             alist = ["chi1", "chi2", "chi3", "chi4", "chi5"]
         elif args.t6c:
             alist = ["chi1"]
-        if args.ti or args.cp:
-            doCpti(args, "test66(pdb_structure, alist)", pdb_structure)
+        if args.tt:
+            if args.ti or args.cp:
+                doCpti(args, "testTau(pdb_structure, pdb_copy)")
+            else:
+                testTau(pdb_structure, pdb_copy)
+        elif args.ti or args.cp:
+            doCpti(args, "test66(pdb_structure, alist, pdb_copy)")
         else:
-            test66(pdb_structure, alist)
+            test66(pdb_structure, alist, pdb_copy)
         r = compare_residues(pdb_structure, pdb_copy, True)
         print(prot_id, fileNo, r["report"])
+
+    if args.t33:
+        resTarg = 6  # 32  # account for 0-start child_list
+        delta = 33  # degrees to change
+        tdelta = delta  # / 10.0  # more realistic for bond angle
+        if pic_input:
+            pdb_structure.internal_to_atom_coordinates()
+            # pdb_structure.atom_to_internal_coordinates()
+            pdb_copy = copy.deepcopy(pdb_structure)
+        elif pdb_input:
+            pdb_copy = pdb_structure.copy()
+            pdb_structure.atom_to_internal_coordinates()
+            pdb_copy.atom_to_internal_coordinates()
+        alist = ["omg", "phi", "psi", "chi1", "chi2", "chi3", "chi4", "chi5", "tau"]
+        print()
+        for chnTpl in zip(pdb_structure.get_chains(), pdb_copy.get_chains()):
+            cic0, cic1 = chnTpl[0].internal_coord, chnTpl[1].internal_coord
+            c = 3
+            for a in alist:
+                if c > 0:
+                    c -= 1
+                else:
+                    pass
+                    break
+
+                ric = chnTpl[0].child_list[resTarg].internal_coord
+                ric1 = chnTpl[1].child_list[resTarg].internal_coord
+                print(
+                    ric.rbase[0],
+                    ric.rbase[2],
+                    ric.rbase[1] if ric.rbase[1] is not None else "",
+                    a,
+                )
+                print("         ", end="")
+                for ar in alist:
+                    print(f"{ar: >8}", end=" ")
+                print()
+                print("start:   ", end="")
+                for ar in alist:
+                    ang = ric.get_angle(ar)
+                    print(f"{ang if ang is not None else '':8.4}", end=" ")
+                print()
+                print("target:  ", end="")
+
+                setter = True  # use edra.setter or direct array manipulation
+                if setter:
+                    ang0 = ric.get_angle(a)
+                    if ang0 is not None:
+                        targ = ang0 + (tdelta if a == "tau" else delta)
+                        if targ > 180.0:
+                            targ -= 360.0
+                        ric.set_angle(a, targ)
+                else:
+                    andx = ric.pick_angle(a).ndx
+                    if a == "tau":
+                        cic0.hedraAngle[andx] += tdelta
+                        cic0.hAtoms_needs_update[andx] = True
+                        cic0.atomArrayValid[cic0.h2aa[andx]] = False
+                    else:
+                        cic0.dihedraAngle[andx] += delta
+                        if cic0.dihedraAngle[andx] > 180.0:
+                            cic0.dihedraAngle[andx] -= 360.0
+                        cic0.dihedraAngleRads[andx] = np.deg2rad(
+                            cic0.dihedraAngle[andx]
+                        )
+                        cic0.dAtoms_needs_update[andx] = True
+                        cic0.atomArrayValid[cic0.d2aa[andx]] = False
+
+                        # cic0.atomArrayValid[cic0.d2aa[...]] = False
+                        # cic0.atomArrayValid[cic0.d2aa[0:3]] = True
+                        # cic0.hAtoms_needs_update[...] = True
+                        # cic0.dAtoms_needs_update[...] = True
+                        # cic0.dcsValid[andx] = False
+
+                for ar in alist:
+                    ang = ric.get_angle(ar)
+                    tang = ric1.get_angle(ar)
+                    print(color(ang, tang, (a == ar), 8.4, 0.001), end=" ")
+
+                print()
+                print("result:  ", end="")
+                cic0.internal_to_atom_coordinates()
+                cic0.atom_to_internal_coordinates()
+
+                # if a == "omg":
+                #    write_PIC(pdb_structure, "omg1.pic")
+
+                for ar in alist:
+                    ang = ric.get_angle(ar)
+                    tang = ric1.get_angle(ar)
+                    print(color(ang, tang, (a == ar), 8.4, 0.001), end=" ")
+                print()
+                print("reset:   ", end="")
+                if setter:
+                    ric.set_angle(a, ang0)
+                else:
+                    if a == "tau":
+                        cic0.hedraAngle[andx] = cic1.hedraAngle[andx]
+                        cic0.hAtoms_needs_update[andx] = True
+                        cic0.atomArrayValid[cic0.h2aa[andx]] = False
+                    else:
+                        cic0.dihedraAngle[andx] = cic1.dihedraAngle[andx]
+                        cic0.dihedraAngleRads[andx] = np.deg2rad(
+                            cic0.dihedraAngle[andx]
+                        )
+                        cic0.dAtoms_needs_update[andx] = True
+                        cic0.atomArrayValid[cic0.d2aa[andx]] = False
+                        # cic0.dcsValid[andx] = False
+
+                for ar in alist:
+                    ang = ric.get_angle(ar)
+                    tang = ric1.get_angle(ar)
+                    print(color(ang, tang, (a == ar), 8.4, 0.001), end=" ")
+                print()
+                cic0.internal_to_atom_coordinates()
+                cic0.atom_to_internal_coordinates()
+
+                print("finish:  ", end="")
+                for ar in alist:
+                    ang = ric.get_angle(ar)
+                    tang = ric1.get_angle(ar)
+                    print(color(ang, tang, (a == ar), 8.4, 0.001), end=" ")
+                print()
+
+                print()
+
+                pass
 
     if args.rama:
         if pdb_input:
