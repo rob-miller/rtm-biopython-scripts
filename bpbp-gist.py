@@ -114,19 +114,19 @@ def test66(pdb_structure, alist, pdb_copy):
         aNdxList = []
         for r in chnTpl[0].get_residues():
             ric = r.internal_coord
-        if not old_srt:
-            if ric is not None:
-                for a in alist:
-                    edron = ric.pick_angle(a)
-                    if edron is not None:
-                        aNdxList.append(edron.ndx)
-            r0 = rmse(
-                cic0.atomArray[:, 0:3],
-                cic1.atomArray[:, 0:3],
-                # cic0.dihedraAngle[aNdxList],
-                # cic1.dihedraAngle[aNdxList],
-            )
-            print(f"{r0:.3}", end="")
+            if not old_srt:
+                if ric is not None:
+                    for a in alist:
+                        edron = ric.pick_angle(a)
+                        if edron is not None:
+                            aNdxList.append(edron.ndx)
+        r0 = rmse(
+            cic0.atomArray[:, 0:3],
+            cic1.atomArray[:, 0:3],
+            # cic0.dihedraAngle[aNdxList],
+            # cic1.dihedraAngle[aNdxList],
+        )
+        print(f"{r0:.3}", end="")
         for i in range(6):
             for r in chnTpl[0].get_residues():
                 ric = r.internal_coord
@@ -142,11 +142,12 @@ def test66(pdb_structure, alist, pdb_copy):
                     # cic0.dihedraAngle[aNdxList],
                     # cic1.dihedraAngle[aNdxList],
                 )
-                print(f" -> {r1:.4} ", end="")
+                print(f" -> {r1:.3} ", end="")
             pass
             # pdb_structure.internal_to_atom_coordinates()
-    if not old_srt:
-        print()
+
+        if not old_srt:
+            print()
 
 
 def testTau(pdb_structure, pdb_copy):
@@ -170,11 +171,13 @@ def testTau(pdb_structure, pdb_copy):
             )
             print(f"{r0:.3}", end="")
         for i in (-3, 1, 1, 1, 1, 1, 1, -1, -1, -1):
+            first = True
             for r in chnTpl[0].get_residues():
                 ric = r.internal_coord
-                if ric:
+                if ric and not first:
                     a = ric.get_angle("tau")
                     ric.set_angle("tau", a + i)
+                first = False
             cic0.internal_to_atom_coordinates()
             cic0.atom_to_internal_coordinates()
             if not old_srt:
@@ -643,7 +646,7 @@ for target in toProcess:
         if pdb_input:
             with warnings.catch_warnings(record=True) as w:
                 # warnings.simplefilter("error")
-                try:
+                if True:  # try:
                     if args.cp or args.ti:
                         doCpti(args, srt_string)
                     else:
@@ -659,8 +662,8 @@ for target in toProcess:
                         print(
                             prot_id, fileNo, r["report"], ("WARNINGS" if warns else "")
                         )
-                except Exception as e:
-                    print(prot_id, fileNo, "EXCEPTION:", type(e), e)
+                # except Exception as e:
+                #    print(prot_id, fileNo, "EXCEPTION:", type(e), e)
 
         elif pic_input:
             pdb_structure.internal_to_atom_coordinates()
@@ -730,7 +733,7 @@ for target in toProcess:
         print(prot_id, fileNo, r["report"])
 
     if args.t33:
-        resTarg = 6  # 32  # account for 0-start child_list
+        resTarg = 32  # 32  # account for 0-start child_list
         delta = 33  # degrees to change
         tdelta = delta  # / 10.0  # more realistic for bond angle
         if pic_input:
@@ -751,7 +754,7 @@ for target in toProcess:
                     c -= 1
                 else:
                     pass
-                    break
+                    # break
 
                 ric = chnTpl[0].child_list[resTarg].internal_coord
                 ric1 = chnTpl[1].child_list[resTarg].internal_coord
@@ -781,26 +784,26 @@ for target in toProcess:
                             targ -= 360.0
                         ric.set_angle(a, targ)
                 else:
-                    andx = ric.pick_angle(a).ndx
-                    if a == "tau":
-                        cic0.hedraAngle[andx] += tdelta
-                        cic0.hAtoms_needs_update[andx] = True
-                        cic0.atomArrayValid[cic0.h2aa[andx]] = False
-                    else:
-                        cic0.dihedraAngle[andx] += delta
-                        if cic0.dihedraAngle[andx] > 180.0:
-                            cic0.dihedraAngle[andx] -= 360.0
-                        cic0.dihedraAngleRads[andx] = np.deg2rad(
-                            cic0.dihedraAngle[andx]
-                        )
-                        cic0.dAtoms_needs_update[andx] = True
-                        cic0.atomArrayValid[cic0.d2aa[andx]] = False
+                    try:
+                        andx = ric.pick_angle(a).ndx
+                        if a == "tau":
+                            cic0.hedraAngle[andx] += tdelta
+                            cic0.hAtoms_needs_update[andx] = True
+                            cic0.atomArrayValid[cic0.h2aa[andx]] = False
+                        else:
+                            cic0.dihedraAngle[andx] += delta
+                            if cic0.dihedraAngle[andx] > 180.0:
+                                cic0.dihedraAngle[andx] -= 360.0
+                            cic0.dihedraAngleRads[andx] = np.deg2rad(
+                                cic0.dihedraAngle[andx]
+                            )
+                            cic0.dAtoms_needs_update[andx] = True
+                            cic0.atomArrayValid[cic0.d2aa[andx]] = False
+                    except AttributeError:
+                        pass  # if residue does not have e.g. chi5
 
-                        # cic0.atomArrayValid[cic0.d2aa[...]] = False
-                        # cic0.atomArrayValid[cic0.d2aa[0:3]] = True
-                        # cic0.hAtoms_needs_update[...] = True
-                        # cic0.dAtoms_needs_update[...] = True
-                        # cic0.dcsValid[andx] = False
+                # if a == "omg":
+                #    write_PIC(pdb_structure, "omg1.pic")
 
                 for ar in alist:
                     ang = ric.get_angle(ar)
@@ -854,7 +857,9 @@ for target in toProcess:
 
                 print()
 
-                pass
+        r = compare_residues(pdb_structure, pdb_copy, True)
+        print(prot_id, fileNo, r["report"])
+        pass
 
     if args.rama:
         if pdb_input:
