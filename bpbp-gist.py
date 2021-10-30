@@ -1,5 +1,5 @@
 #!/usr/local/bin/python3
-# Copyright (c) 2019 Robert T. Miller.  All rights reserved.
+# Copyright (c) 2019-2021 Robert T. Miller.  All rights reserved.
 
 # -*- coding: latin-1 -*-
 """Interconvert PDB internal and external coordinates.
