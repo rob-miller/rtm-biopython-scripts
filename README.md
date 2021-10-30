@@ -5,6 +5,10 @@ Python scripts to access or test Biopython code
 code.  Run with `-h` for a help message, nice to configure the pdbDirs variable if you have a local repository of PDB files.  The name comes from 'Biopython buildprot(ein)',
 and previously I was making it available as a gist.
 
+* **ca-plot-7rsa.py** - displays a C-alpha distance plot for PDB file 7rsa chin A (ribonuclease A).  Requires matplotlib, code shows how to change to all backbone atoms or all atoms.
+
+* **phe-pairs-2.py** - prints to stdout PDB format ATOM lines for aligned PHE residues from PDB files 3pbl and 3rze.  Demonstrates use of coordinate space transforms in Biopython internal_coords module to align specified atoms in PDB files and then inspect similarities/differences in environments of those atoms.  Suggest 'color by chain' for viewing.
+
 * **test_all.py** - runs Biopython PDB or mmCIF parsers on file names or PDB idcodes specified on stdin, prints a line of 
 
     `file_no format idcode chain_id chain_count residues disordered_residues atoms disordered_atoms resolution missing_residues non-sequential_residues`
